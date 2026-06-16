@@ -541,6 +541,13 @@ class StatContext {
         e_EXPIRED_VALUE = 3
     };
 
+    /// NOTE: only exists for ABI compatibility, must be polymorphic.
+    class StatContextUserData {
+      public:
+        virtual ~StatContextUserData();
+        virtual void snapshot() = 0;
+    };
+
     /// Callback to be invoked during a snapshot;
     typedef bsl::function<void(const StatContext&)> SnapshotCallback;
 
@@ -821,6 +828,11 @@ class StatContext {
     /// Get the value with the specified `valueIndex` of the specified
     /// `valueType`
     const StatValue& value(ValueType valueType, int valueIndex) const;
+
+    /// Return a modifiable pointer to the user data associated with this
+    /// context, or 0 if no such data exists.
+    /// NOTE: keep for ABI compatibility.
+    StatContextUserData* userData() const { return NULL; }
 
     /// Return a pointer to the datum allocator in this context.
     bslma::Allocator* datumAllocator() const;

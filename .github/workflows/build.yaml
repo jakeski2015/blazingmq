@@ -93,7 +93,7 @@ jobs:
       matrix:
         mode: ["legacy_mode", "fsm_mode"]
         cluster: ["single", "multi"]
-        consistency: ["eventual_consistency", "strong_consistency"]
+        consistency: ["eventual_consistency", "strong_consistency", "not (eventual_consistency or strong_consistency)"]
       fail-fast: false
     runs-on: ubuntu-latest
     needs: build_ubuntu
@@ -426,3 +426,28 @@ jobs:
 
       - name: Inspect Docker images
         run: docker image ls
+
+  cpp-linter-check:
+    name: C++ Linter Check
+    needs: build_ubuntu
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{needs.build_ubuntu.outputs.artifact_key }}
+      - uses: cpp-linter/cpp-linter-action@77c390c5ba9c947ebc185a3e49cc754f1558abb5
+        id: linter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          style: ''  # Disable clang-format checks
+          tidy-checks: '' # Use .clang-tidy config file
+          # only 'update' a single comment in a pull request thread.
+          thread-comments: ${{ github.event_name == 'pull_request' && 'update' }}
+          lines-changed-only: diff
+          version: '21'
+          database: build/blazingmq
+      - name: Fail fast?!
+        if: steps.linter.outputs.checks-failed > 0
+        run: exit 1

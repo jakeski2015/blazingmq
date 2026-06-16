@@ -101,14 +101,14 @@
 //      typedef bsl::function<void()>
 //              SendCallback;
 //
-//      typedef bsl::function<void(int clientId, int payload)>
+//      typedef bsl::function<void()>
 //              ReceiveCallback;
 //
 //      // CLASS FUNCTIONS
 //      static void onDataSent();
 //          // Callback invoked on completion of a 'send' operation.
 //
-//      static void onDataReceived(int clientId, int payload);
+//      static void onDataReceived();
 //          // Callback invoked on completion of a 'receive' operation.
 //
 //      static void send(int                 clientId,
@@ -119,9 +119,8 @@
 //          // 'completionCallback' when the payload is sent.
 //
 //      static void receive(const ReceiveCallback& completionCallback);
-//          // Receive a payload send to us by another client and invoke the
-//          // specified 'completionCallback' with the payload and the sender
-//          // client ID.
+//          // Receive a payload from another client and invoke the specified
+//          // 'completionCallback' when done.
 //  };
 //..
 // Lets say we want to "receive" data from 10 clients, and then "send" data
@@ -159,13 +158,12 @@
 //  chain.join();
 //..
 
-#include <bmqu_objectplaceholder.h>
-
 // BDE
 #include <bdlf_noop.h>
 #include <bsl_list.h>
 #include <bslalg_constructorproxy.h>
 #include <bslma_allocator.h>
+#include <bslma_managedptr.h>
 #include <bslma_usesbslmaallocator.h>
 #include <bslmf_assert.h>
 #include <bslmf_decay.h>
@@ -188,15 +186,6 @@
 #ifdef BSLS_COMPILERFEATURES_SUPPORT_TRAITS_HEADER
 #include <bsl_type_traits.h>
 #endif
-
-#if BSLS_COMPILERFEATURES_SIMULATE_CPP11_FEATURES
-// Include version that can be compiled with C++03
-// Generated on Wed Jun 18 14:44:06 2025
-// Command line: sim_cpp11_features.pl bmqu_operationchain.h
-# define COMPILING_BMQU_OPERATIONCHAIN_H
-# include <bmqu_operationchain_cpp03.h>
-#undef COMPILING_BMQU_OPERATIONCHAIN_H
-#else
 
 namespace BloombergLP {
 
@@ -300,14 +289,11 @@ class OperationChain_CompletionCallbackWrapper {
 
   public:
     // ACCESSORS
-#if !BSLS_COMPILERFEATURES_SIMULATE_CPP11_FEATURES  // $var-args=9
 
-    /// Invoke the associated completion callback with the specified `args`
-    /// arguments and notify the associated operation chain. Propagate any
-    /// exception thrown by the completion callback to the caller.
-    template <class... ARGS>
-    void operator()(ARGS&&... args) const;
-#endif
+    /// Invoke the associated completion callback and notify the associated
+    /// operation chain. Propagate any exception thrown by the completion
+    /// callback to the caller.
+    void operator()() const;
 
     // TRAITS
     BSLMF_NESTED_TRAIT_DECLARATION(OperationChain_CompletionCallbackWrapper,
@@ -383,12 +369,6 @@ class OperationChain_Job {
                      JobHandle       jobHandle) BSLS_KEYWORD_OVERRIDE;
     };
 
-    /// A "small" dummy functor used to help calculate the size of the
-    /// on-stack buffer.
-    struct Dummy : public bdlf::NoOp {
-        void* d_padding[5];
-    };
-
   private:
     // PRIVATE DATA
 
@@ -397,11 +377,8 @@ class OperationChain_Job {
     // job inserted into a link.
     unsigned d_id;
 
-    // Uses an on-stack buffer to allocate memory for "small" objects, and
-    // falls back to requesting memory from the supplied allocator if
-    // the buffer is not large enough. Note that the size of the on-stack
-    // buffer is an arbitrary value.
-    bmqu::ObjectPlaceHolder<sizeof(Target<Dummy, Dummy>)> d_target;
+    /// Type-erased target holding the operation and completion callbacks.
+    bslma::ManagedPtr<TargetBase> d_target_mp;
 
   private:
     // NOT IMPLEMENTED
@@ -805,27 +782,20 @@ inline OperationChain_CompletionCallbackWrapper<CO_CALLBACK>::
 }
 
 // ACCESSORS
-#if !BSLS_COMPILERFEATURES_SIMULATE_CPP11_FEATURES  // $var-args=9
 template <class CO_CALLBACK>
-template <class... ARGS>
-inline void OperationChain_CompletionCallbackWrapper<CO_CALLBACK>::operator()(
-    ARGS&&... args) const
+inline void
+OperationChain_CompletionCallbackWrapper<CO_CALLBACK>::operator()() const
 {
     try {
-        // invoke completion callback
-        bslmf::Util::moveIfSupported((*d_coCallback_p))(
-            bslmf::Util::forward<ARGS>(args)...);
+        bslmf::Util::moveIfSupported((*d_coCallback_p))();
     }
     catch (...) {
-        // notify the chain and rethrow the exception
         d_chain_p->onOperationCompleted(d_jobHandle);
         throw;  // THROW
     }
 
-    // notify the chain
     d_chain_p->onOperationCompleted(d_jobHandle);
 }
-#endif
 
 // ------------------------
 // class OperationChain_Job
@@ -847,7 +817,7 @@ inline OperationChain_Job::OperationChain_Job(
                    typename bsl::decay<CO_CALLBACK>::type>
         Target;
 
-    d_target.createObject<Target>(
+    d_target_mp = bslma::ManagedPtrUtil::allocateManaged<Target>(
         allocator,
         BSLS_COMPILERFEATURES_FORWARD(OP_CALLBACK, opCallback),
         BSLS_COMPILERFEATURES_FORWARD(CO_CALLBACK, coCallback),
@@ -857,7 +827,7 @@ inline OperationChain_Job::OperationChain_Job(
 // CREATORS
 inline OperationChain_Job::~OperationChain_Job()
 {
-    d_target.deleteObject<TargetBase>();
+    // NOTHING
 }
 
 // MANIPULATORS
@@ -870,7 +840,7 @@ inline void OperationChain_Job::execute(OperationChain* chain,
     // PRECONDITIONS
     BSLS_ASSERT(chain);
 
-    d_target.object<TargetBase>()->execute(chain, jobHandle);
+    d_target_mp->execute(chain, jobHandle);
 }
 
 // ACCESSORS
@@ -1019,7 +989,5 @@ inline void bmqu::swap(OperationChainLink& lhs,
 }
 
 }  // close enterprise namespace
-
-#endif  // End C++11 code
 
 #endif
