@@ -87,6 +87,8 @@ def make_message_properties_area(
     fuzz_header: bool = False,
     fuzz_mph: bool = False,
     fuzz_data: bool = False,
+    fuzz_byte0: bool = False,
+    fuzz_area_words: bool = False,
     new_style: bool = False,
 ) -> boofuzz.Request:
     """
@@ -108,18 +110,18 @@ def make_message_properties_area(
             name="properties_hdr_byte0",
             default_value=packed_byte0,
             full_range=True,
-            fuzzable=fuzz_header,
+            fuzzable=fuzz_header or fuzz_byte0,
         ),
         boofuzz.Byte(
             name="area_words_upper",
             default_value=(area_words >> 16) & 0xFF,
             fuzzable=False,
         ),
-        boofuzz.Word(  # double check
+        boofuzz.Word(
             name="area_words_lower",
             default_value=area_words & 0xFFFF,
             endian=">",
-            fuzzable=fuzz_header,
+            fuzzable=fuzz_header or fuzz_area_words,
         ),
         boofuzz.Byte(
             name="properties_hdr_reserved",
@@ -187,6 +189,8 @@ def make_put_with_fuzzable_properties(
     fuzz_header: bool = True,
     fuzz_mph: bool = True,
     fuzz_data: bool = False,
+    fuzz_byte0: bool = False,
+    fuzz_area_words: bool = False,
 ) -> BoofuzzSequence:
     """
     Build a PUT event as a BoofuzzSequence with auto-computed CRC and the
@@ -231,6 +235,8 @@ def make_put_with_fuzzable_properties(
         fuzz_header=fuzz_header,
         fuzz_mph=fuzz_mph,
         fuzz_data=fuzz_data,
+        fuzz_byte0=fuzz_byte0,
+        fuzz_area_words=fuzz_area_words,
         new_style=new_style,
     )
 
@@ -432,6 +438,8 @@ def fuzz_property_data(host: str, port: int) -> None:
             fuzz_header=False,
             fuzz_mph=False,
             fuzz_data=True,
+            fuzz_byte0=True,
+            fuzz_area_words=True,
         ),
     )
 
