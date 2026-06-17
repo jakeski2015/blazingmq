@@ -86,6 +86,7 @@ def make_message_properties_area(
     num_properties: int = 2,
     fuzz_header: bool = False,
     fuzz_mph: bool = False,
+    fuzz_data: bool = False,
     new_style: bool = False,
 ) -> boofuzz.Request:
     """
@@ -156,22 +157,23 @@ def make_message_properties_area(
         )
 
     for i, (_, name, value) in enumerate(properties):
-        children.append(
-            boofuzz.Bytes(
-                name=f"prop{i}_name",
-                default_value=name,
-                size=len(name),
-                fuzzable=False,
-            )
-        )
-        children.append(
-            boofuzz.Bytes(
-                name=f"prop{i}_value",
-                default_value=value,
-                size=len(value),
-                fuzzable=False,
-            )
-        )
+        name_kwargs = {
+            "name": f"prop{i}_name",
+            "default_value": name,
+            "fuzzable": fuzz_data,
+        }
+        if not fuzz_data:
+            name_kwargs["size"] = len(name)
+        children.append(boofuzz.Bytes(**name_kwargs))
+
+        value_kwargs = {
+            "name": f"prop{i}_value",
+            "default_value": value,
+            "fuzzable": fuzz_data,
+        }
+        if not fuzz_data:
+            value_kwargs["size"] = len(value)
+        children.append(boofuzz.Bytes(**value_kwargs))
 
     return boofuzz.Request(
         "message_properties_new_style" if new_style else "message_properties",
@@ -182,6 +184,9 @@ def make_message_properties_area(
 def make_put_with_fuzzable_properties(
     num_properties: int = 2,
     new_style: bool = False,
+    fuzz_header: bool = True,
+    fuzz_mph: bool = True,
+    fuzz_data: bool = False,
 ) -> BoofuzzSequence:
     """
     Build a PUT event as a BoofuzzSequence with auto-computed CRC and the
@@ -223,8 +228,9 @@ def make_put_with_fuzzable_properties(
 
     properties_request = make_message_properties_area(
         num_properties=num_properties,
-        fuzz_header=True,
-        fuzz_mph=True,
+        fuzz_header=fuzz_header,
+        fuzz_mph=fuzz_mph,
+        fuzz_data=fuzz_data,
         new_style=new_style,
     )
 
@@ -368,12 +374,11 @@ class _PersistentConnection(boofuzz.TCPSocketConnection):
         super().close()
 
 
-def fuzz_properties(host: str, port: int) -> None:
-    """
-    Launch a long-running fuzzing session targeting message properties in PUT
-    messages at depth 2 (all pairs of fuzzable fields).
-    NOTE: This currently only fuzzes the first property's header fields to limit the combinatorial explosion, but can be extended to fuzz more.
-    """
+def _run_put_fuzz_session(
+    host: str, port: int, put_sequence: BoofuzzSequence
+) -> None:
+    """Set up a persistent connection with a property-expression subscription,
+    wrap *put_sequence* as a PUT request, and fuzz at depth 2."""
 
     setup_steps = [
         make_authentication_message(),
@@ -398,16 +403,37 @@ def fuzz_properties(host: str, port: int) -> None:
         fuzz_db_keep_only_n_pass_cases=1,
     )
 
-    put = boofuzz.Request(
-        "Put",
-        children=(make_put_with_fuzzable_properties()),
-    )
+    put = boofuzz.Request("Put", children=put_sequence)
     session.connect(put)
 
     try:
         session.fuzz(max_depth=2)
     finally:
         conn.shutdown()
+
+
+def fuzz_properties(host: str, port: int) -> None:
+    """
+    Fuzz the message-properties metadata fields (properties header + first MPH)
+    in PUT messages.
+    """
+    _run_put_fuzz_session(host, port, make_put_with_fuzzable_properties())
+
+
+def fuzz_property_data(host: str, port: int) -> None:
+    """
+    Fuzz the actual property names and values in PUT messages while keeping all
+    metadata fields pinned to valid values.
+    """
+    _run_put_fuzz_session(
+        host,
+        port,
+        make_put_with_fuzzable_properties(
+            fuzz_header=False,
+            fuzz_mph=False,
+            fuzz_data=True,
+        ),
+    )
 
 
 # todo: (specific to fuzz testing message properties)
