@@ -605,6 +605,10 @@ void TCPSessionFactory::initialConnectionComplete(
         d_initialConnectionContextCache.erase(channel.get());
     }
 
+    // RACE CONDITION REPRODUCER:
+    // bslmt::ThreadUtil::microSleep(100000, 0);
+    // see src/standalones/reproduce_race.py for more details
+
     // Reset any authentication message stored in the authentication context
     if (initialConnectionContext_sp->authenticationContext()) {
         initialConnectionContext_sp->authenticationContext()

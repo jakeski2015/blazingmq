@@ -37,6 +37,7 @@ settings.json
 
 # fuzz-test output folder
 **/boofuzz-results
+/Testing
 
 # Symlink from 'src/applications/bmqbrkr/run'
 src/applications/bmqbrkr/etc/etc
